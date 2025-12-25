@@ -11,7 +11,7 @@
 **[Documentation](https://biomedsciai.github.io/histocartography/)**
 | **[Paper](https://arxiv.org/pdf/2107.10073.pdf)** 
 
-**Welcome to the `histocartography` repository!** `histocartography` is a python-based library designed to facilitate the development of graph-based computational pathology pipelines. The library includes plug-and-play modules to perform,
+**[WIP] TDA integration (skoc). Welcome to the `histocartography` repository!** `histocartography` is a python-based library designed to facilitate the development of graph-based computational pathology pipelines. The library includes plug-and-play modules to perform,
 - standard histology image pre-processing (e.g., *stain normalization*, *nuclei detection*, *tissue detection*)
 - entity-graph representation building (e.g. *cell graph*, *tissue graph*, *hierarchical graph*)
 - modeling Graph Neural Networks (e.g. *GIN*, *PNA*)
