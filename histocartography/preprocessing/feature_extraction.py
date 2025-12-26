@@ -341,6 +341,10 @@ class PatchFeatureExtractor:
 
         if architecture.startswith("s3://mlflow"):
             model = self._get_mlflow_model(url=architecture)
+        elif ":" in architecture and architecture.split(":")[1].endswith(".pth"):
+            # Format: "resnet50:/path/to/weights.pth"
+            arch_name, weights_path = architecture.split(":", 1)
+            model = self._get_local_model_with_architecture(path=weights_path, architecture=arch_name)
         elif architecture.endswith(".pth"):
             model = self._get_local_model(path=architecture)
         else:
@@ -393,8 +397,72 @@ class PatchFeatureExtractor:
         Returns:
             nn.Module: A PyTorch model.
         """
-        model = torch.load(path, map_location=self.device)
-        return model
+        loaded = torch.load(path, map_location=self.device)
+        
+        # Check if it's a state_dict (dict) or a full model
+        if isinstance(loaded, dict):
+            # If it's a dict, it might be a state_dict
+            # Try to check if it looks like a state_dict (has keys like 'fc.weight', 'layer1.0.conv1.weight', etc.)
+            if any(key.startswith(('fc.', 'classifier.', 'layer', 'conv', 'bn')) for key in loaded.keys()):
+                raise ValueError(
+                    f'The file {path} appears to contain a state_dict (weights only), not a full model. '
+                    f'Please specify the architecture using the format "architecture:/path/to/weights.pth", '
+                    f'e.g., "resnet50:{path}"'
+                )
+        
+        # Assume it's a full model
+        return loaded
+    
+    def _get_local_model_with_architecture(self, path: str, architecture: str) -> nn.Module:
+        """
+        Load model weights from a local path and apply them to a specified architecture.
+
+        Args:
+            path (str): Path to the model weights file (.pth).
+            architecture (str): Architecture name (e.g., 'resnet50', 'resnet101').
+
+        Returns:
+            nn.Module: A PyTorch model with loaded weights.
+        """
+        # First, create the model architecture without pretrained weights
+        # to avoid downloading weights we won't use
+        model_class = dynamic_import_from("torchvision.models", architecture)
+        # Try to create model without pretrained weights first
+        try:
+            # For newer torchvision versions, use weights=None
+            model = model_class(weights=None)
+        except TypeError:
+            # For older torchvision versions, use pretrained=False
+            try:
+                model = model_class(pretrained=False)
+            except TypeError:
+                # Some models might require pretrained parameter, fallback to True
+                model = model_class(pretrained=True)
+        
+        # Load the weights
+        loaded = torch.load(path, map_location=self.device)
+        
+        # Check if it's a state_dict or a full model
+        if isinstance(loaded, dict):
+            # It's a state_dict, load it into the model
+            try:
+                model.load_state_dict(loaded, strict=True)
+            except RuntimeError as e:
+                # If strict loading fails, try with strict=False and warn
+                warnings.warn(
+                    f'Some weights could not be loaded: {str(e)}. '
+                    f'Continuing with available weights.'
+                )
+                model.load_state_dict(loaded, strict=False)
+        else:
+            # It's a full model, extract state_dict if possible
+            if hasattr(loaded, 'state_dict'):
+                model.load_state_dict(loaded.state_dict(), strict=False)
+            else:
+                # If it's already a model, use it directly
+                model = loaded
+        
+        return model.to(self.device)
 
     def _get_mlflow_model(self, url: str) -> nn.Module:
         """
