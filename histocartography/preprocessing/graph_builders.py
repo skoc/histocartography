@@ -22,6 +22,7 @@ from .utils import fast_histogram
 LABEL = "label"
 CENTROID = "centroid"
 FEATURES = "feat"
+BBOX = "bbox"
 
 
 def two_hop_neighborhood(graph: dgl.DGLGraph) -> dgl.DGLGraph:
@@ -96,8 +97,12 @@ class BaseGraphBuilder(PipelineStep):
         # get instance centroids
         centroids = self._get_node_centroids(instance_map)
 
+        # get instance bounding boxes
+        bboxes = self._get_node_bboxes(instance_map)
+
         # add node content
         self._set_node_centroids(centroids, graph)
+        self._set_node_bboxes(bboxes, graph)
         self._set_node_features(features, image_size, graph)
         if annotation is not None:
             self._set_node_labels(instance_map, annotation, graph)
@@ -173,6 +178,39 @@ class BaseGraphBuilder(PipelineStep):
             graph (dgl.DGLGraph): Graph to add the centroids to
         """
         graph.ndata[CENTROID] = torch.FloatTensor(centroids)
+
+    def _get_node_bboxes(
+            self, instance_map: np.ndarray
+    ) -> np.ndarray:
+        """Get the bounding boxes of the graph nodes
+        Args:
+            instance_map (np.ndarray): Instance map depicting tissue components
+        Returns:
+            bboxes (np.ndarray): Node bounding boxes in format [x_min, y_min, x_max, y_max]
+        """
+        regions = regionprops(instance_map)
+        bboxes = np.empty((len(regions), 4))
+        for i, region in enumerate(regions):
+            # regionprops.bbox returns (min_row, min_col, max_row, max_col) in (y, x) format
+            min_row, min_col, max_row, max_col = region.bbox
+            # Store as [x_min, y_min, x_max, y_max] for consistency
+            bboxes[i, 0] = min_col  # x_min
+            bboxes[i, 1] = min_row  # y_min
+            bboxes[i, 2] = max_col  # x_max
+            bboxes[i, 3] = max_row  # y_max
+        return bboxes
+
+    def _set_node_bboxes(
+            self,
+            bboxes: np.ndarray,
+            graph: dgl.DGLGraph
+    ) -> None:
+        """Set the bounding boxes of the graph nodes
+        Args:
+            bboxes (np.ndarray): Node bounding boxes in format [x_min, y_min, x_max, y_max]
+            graph (dgl.DGLGraph): Graph to add the bounding boxes to
+        """
+        graph.ndata[BBOX] = torch.FloatTensor(bboxes)
 
     def _set_node_features(
             self,
